@@ -1,0 +1,13 @@
+{
+  "name": "Tokens → DTCG",
+  "id": "tokens-to-dtcg-converter",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-pages",
+  "networkAccess": {
+    "allowedDomains": ["*"],
+    "reasoning": "Required to sync DTCG tokens with a user-configured Git server (GitLab, self-hosted instances). Only URLs explicitly entered in plugin settings are ever contacted — no telemetry, no background requests."
+  }
+}
