@@ -149,6 +149,28 @@
   margin-left: 8px;
 }
 
+.apply-banner {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.apply-banner.success { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+.apply-banner.mixed   { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning); }
+.apply-banner.error   { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+.apply-banner b { font-weight: 600; }
+.apply-banner ul { margin: 6px 0 0; padding-left: 18px; }
+.apply-banner li { margin-bottom: 2px; word-break: break-word; }
+.apply-confirm-warn {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 11px;
+}
+
 /* ====================================================================
    Theme — adapts to Figma dark/light via CSS vars
    ==================================================================== */
@@ -1072,6 +1094,29 @@ button {
     </div>
   </div>
 
+  <!-- ========= Apply confirm modal ========= -->
+  <div class="modal-backdrop" id="apply-modal" style="display:none;">
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-header">
+        <div class="modal-title">Apply DTCG to Figma</div>
+        <button class="modal-close" id="apply-modal-close" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="apply-modal-summary"></div>
+        <div id="apply-modal-warn" class="apply-confirm-warn" style="display:none;"></div>
+      </div>
+      <div class="modal-footer">
+        <div style="flex:1;"></div>
+        <button class="icon-btn" id="apply-modal-cancel">Cancel</button>
+        <button class="icon-btn primary" id="apply-modal-confirm">Apply changes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ========= Push confirm modal ========= -->
   <div class="modal-backdrop" id="push-modal" style="display:none;">
     <div class="modal" style="max-width:440px;">
@@ -1794,6 +1839,8 @@ window.addEventListener("message", (e) => {
     } else {
       handleFigmaVariables(msg.data);
     }
+  } else if (msg.type === "apply-report") {
+    if (typeof handleApplyReport === "function") handleApplyReport(msg.report);
   } else if (msg.type === "error") {
     showParseError("Plugin error — " + msg.message);
     $("btn-read-figma-label").textContent = "Read Figma variables";
@@ -2880,16 +2927,22 @@ function normalizeForFigma(inferred) {
   return v == null ? "" : String(v);
 }
 
-function valuesEqual(desired, current, type) {
+function valuesEqual(desired, current, type, ctx) {
   if (desired == null || current == null) return desired === current;
   if (desired && desired.kind === "alias") {
-    if (current && current.type === "VARIABLE_ALIAS") {
-      // Stage 1: alias-equality without an idToFullPath map is heuristic; treat as equal
-      // so we don't spam the diff with false positives. Stage 2 will resolve properly.
-      return true;
-    }
-    return false;
+    if (!current || current.type !== "VARIABLE_ALIAS") return false;
+    // Resolve both sides to (collection, path) and compare
+    const desiredTarget = (ctx && ctx.resolveAlias) ? ctx.resolveAlias(desired.path) : null;
+    if (!desiredTarget) return false;
+    const snap = ctx && ctx.snapshot;
+    if (!snap) return false;
+    const curVar = snap.variables && snap.variables[current.id];
+    if (!curVar) return false;
+    const curCol = snap.variableCollections && snap.variableCollections[curVar.variableCollectionId];
+    if (!curCol) return false;
+    return curCol.name === desiredTarget.collection && curVar.name === desiredTarget.path;
   }
+  if (current && current.type === "VARIABLE_ALIAS") return false;
   if (type === "COLOR") {
     if (typeof desired !== "object" || typeof current !== "object") return false;
     const eq = (x, y) => Math.abs((x ?? 0) - (y ?? 0)) < 1 / 512;
@@ -2927,6 +2980,9 @@ function computePlan(dtcg, snapshot) {
   const skipped = [];
   const seen = new Set();
 
+  // Build alias-resolution context once per plan computation
+  const ctx = { snapshot, resolveAlias: buildAliasResolverFor(dtcg, snapshot) };
+
   for (const d of desired) {
     const skip = isSkippedToken(d.token);
     if (skip) {
@@ -2944,7 +3000,7 @@ function computePlan(dtcg, snapshot) {
     const existing = currentMap.get(k);
     if (!existing) {
       creates.push({ ...d, inferred, desiredFigma });
-    } else if (valuesEqual(desiredFigma, existing.value, existing.type)) {
+    } else if (valuesEqual(desiredFigma, existing.value, existing.type, ctx)) {
       unchanged.push({ ...d, inferred, existing });
     } else {
       updates.push({ ...d, inferred, desiredFigma, existing });
@@ -3001,15 +3057,17 @@ function renderPlan() {
     sectionHTML("skipped", "Skipped", plan.skipped, renderSkipRow) +
     sectionHTML("unchanged", "Unchanged", plan.unchanged, renderUnchangedRow);
 
+  const hasWork = (totals.create + totals.update + applyState.selectedDeletes.size) > 0;
+  const banner = applyState.lastReport ? renderReportBanner(applyState.lastReport) : "";
   const actions = `
     <div class="apply-actions">
-      <span class="hint">Stage 1 preview — applying to Figma is not wired up yet.</span>
+      <span class="hint">${hasWork ? "Review the diff, then apply." : "No changes to apply."}</span>
       <span class="spacer"></span>
       <button class="btn" id="apply-recompute">Recompute</button>
-      <button class="btn primary" id="apply-go" disabled title="Stage 2 will enable this">Apply…</button>
+      <button class="btn primary" id="apply-go"${hasWork ? "" : " disabled"}>Apply…</button>
     </div>`;
 
-  $("apply-content").innerHTML = summary + sections + actions;
+  $("apply-content").innerHTML = banner + summary + sections + actions;
   attachPlanHandlers();
 
   // Show apply count badge on the tab
@@ -3177,7 +3235,236 @@ function attachPlanHandlers() {
       '<div class="apply-loading"><span class="spinner"></span> Re-reading Figma variables…</div>';
     sendToPlugin({ type: "read-variables", purpose: "apply" });
   });
+  const go = $("apply-go");
+  if (go) go.addEventListener("click", openApplyDialog);
 }
+
+/* ---------- plan builder (consolidate diff into per-variable upserts) ---------- */
+
+function buildAliasResolverFor(dtcg, snapshot) {
+  const cols = new Map(); // colName -> Set<modeName>
+  if (isPlainObject(dtcg)) {
+    for (const [colName, colNode] of Object.entries(dtcg)) {
+      if (!isPlainObject(colNode) || colName.startsWith("$")) continue;
+      const modes = detectModeBuckets(colNode);
+      if (modes) {
+        cols.set(colName, new Set(Object.keys(modes)));
+      } else {
+        cols.set(colName, new Set(["Default"]));
+      }
+    }
+  }
+  if (snapshot && snapshot.variableCollections) {
+    for (const c of Object.values(snapshot.variableCollections)) {
+      if (!cols.has(c.name)) cols.set(c.name, new Set());
+      for (const modeName of Object.values(c.modes || {})) cols.get(c.name).add(modeName);
+    }
+  }
+  return function resolveAlias(aliasStr) {
+    if (!aliasStr) return null;
+    const segs = String(aliasStr).split(".");
+    if (segs.length < 2) return null;
+    const colName = segs[0];
+    if (!cols.has(colName)) return null;
+    let rest = segs.slice(1);
+    if (rest.length > 1 && cols.get(colName).has(rest[0])) rest = rest.slice(1);
+    return { collection: colName, path: rest.join("/") };
+  };
+}
+
+function buildAliasResolver() {
+  return buildAliasResolverFor(state.conversion && state.conversion.data, applyState.figmaSnapshot);
+}
+
+function buildApplyPlan() {
+  const plan = applyState.plan;
+  if (!plan) return null;
+
+  const resolveAlias = buildAliasResolver();
+
+  // Group creates+updates by (collection, path) so we set all modes on one variable.
+  const upsertMap = new Map();
+  const unresolvedAliases = [];
+
+  for (const e of [...plan.creates, ...plan.updates]) {
+    const key = e.collection + "::" + e.path;
+    if (!upsertMap.has(key)) {
+      upsertMap.set(key, {
+        collection: e.collection,
+        path: e.path,
+        figmaType: e.inferred.figmaType,
+        scopes: e.inferred.scopes,
+        description: e.inferred.description,
+        values: []
+      });
+    }
+    const up = upsertMap.get(key);
+    const desired = e.desiredFigma;
+    if (desired && desired.kind === "alias") {
+      const target = resolveAlias(desired.path);
+      if (target) {
+        up.values.push({ mode: e.mode, kind: "alias", target });
+      } else {
+        unresolvedAliases.push({ collection: e.collection, path: e.path, mode: e.mode, alias: desired.path });
+      }
+    } else if (desired != null && !(desired && desired.skip)) {
+      up.values.push({ mode: e.mode, kind: "literal", value: desired });
+    }
+  }
+
+  // Drop upserts with no resolvable values
+  const upserts = [...upsertMap.values()].filter(u => u.values.length > 0);
+
+  // Collections + modes referenced
+  const colMap = new Map();
+  for (const u of upserts) {
+    if (!colMap.has(u.collection)) colMap.set(u.collection, new Set());
+    for (const v of u.values) colMap.get(u.collection).add(v.mode);
+  }
+  const collections = [...colMap.entries()].map(([name, modes]) => ({ name, modes: [...modes] }));
+
+  // Deletes — only ticked, dedup by (collection, path) since one variable spans modes
+  const dedup = new Map();
+  for (const d of plan.willDelete) {
+    const id = "del::" + d.collection + "::" + d.mode + "::" + d.path;
+    if (!applyState.selectedDeletes.has(id)) continue;
+    const k = d.collection + "::" + d.path;
+    if (!dedup.has(k)) dedup.set(k, { collection: d.collection, path: d.path });
+  }
+  const deletes = [...dedup.values()];
+
+  return { plan: { collections, upserts, deletes }, unresolvedAliases };
+}
+
+/* ---------- Apply modal ---------- */
+
+$("apply-modal-close").addEventListener("click", closeApplyDialog);
+$("apply-modal-cancel").addEventListener("click", closeApplyDialog);
+$("apply-modal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeApplyDialog(); });
+$("apply-modal-confirm").addEventListener("click", executeApply);
+
+function openApplyDialog() {
+  const built = buildApplyPlan();
+  if (!built || (built.plan.upserts.length === 0 && built.plan.deletes.length === 0)) {
+    sendToPlugin({ type: "notify", message: "Nothing to apply.", error: true });
+    return;
+  }
+  applyState.pendingPlan = built.plan;
+
+  const p = built.plan;
+  const totals = {
+    creates: applyState.plan.creates.length,
+    updates: applyState.plan.updates.length,
+    deletes: p.deletes.length,
+    upserts: p.upserts.length,
+    collections: p.collections.length
+  };
+
+  let summary =
+    '<div>This will modify <b>' + escapeHtml(figmaFileLabel()) + '</b>.</div>' +
+    '<ul style="margin:8px 0 0; padding-left:18px;">' +
+      '<li>' + p.upserts.length + ' variable' + (p.upserts.length === 1 ? '' : 's') +
+        ' (' + totals.creates + ' to create, ' + totals.updates + ' to update)</li>' +
+      '<li>' + p.collections.length + ' collection' + (p.collections.length === 1 ? '' : 's') + ' touched</li>';
+  if (p.deletes.length) {
+    summary += '<li><b style="color:var(--error);">' + p.deletes.length + ' variable' + (p.deletes.length === 1 ? '' : 's') + ' to delete</b></li>';
+  }
+  summary += '</ul>';
+
+  if (built.unresolvedAliases.length) {
+    summary += '<div style="margin-top:8px; color:var(--text-secondary); font-size:11px;">' +
+      built.unresolvedAliases.length + ' alias' + (built.unresolvedAliases.length === 1 ? '' : 'es') +
+      ' could not be resolved and will be skipped.</div>';
+  }
+
+  $("apply-modal-summary").innerHTML = summary;
+  const warn = $("apply-modal-warn");
+  if (p.deletes.length) {
+    warn.textContent = "Deletes are permanent. " + p.deletes.length + " Figma variable" + (p.deletes.length === 1 ? '' : 's') + " will be removed.";
+    warn.style.display = "block";
+  } else {
+    warn.style.display = "none";
+  }
+
+  $("apply-modal-confirm").disabled = false;
+  $("apply-modal-confirm").textContent = "Apply changes";
+  $("apply-modal").style.display = "flex";
+}
+
+function closeApplyDialog() {
+  $("apply-modal").style.display = "none";
+}
+
+function figmaFileLabel() {
+  const meta = applyState.figmaSnapshot && applyState.figmaSnapshot._meta;
+  return (meta && meta.fileName) || "this Figma file";
+}
+
+function executeApply() {
+  if (!applyState.pendingPlan) return;
+  const btn = $("apply-modal-confirm");
+  btn.disabled = true;
+  btn.textContent = "Applying…";
+  applyState.pending = "applying";
+  sendToPlugin({ type: "apply-plan", plan: applyState.pendingPlan });
+}
+
+/* ---------- Apply report handling ---------- */
+
+function handleApplyReport(report) {
+  applyState.pending = null;
+  applyState.lastReport = report || null;
+  closeApplyDialog();
+  // Re-read variables to refresh the diff with the post-apply state
+  applyState.pending = "reading";
+  $("apply-content").innerHTML =
+    '<div class="apply-loading"><span class="spinner"></span> Refreshing diff…</div>';
+  sendToPlugin({ type: "read-variables", purpose: "apply" });
+
+  // Notify (succinct)
+  const c = (report && report.counts) || {};
+  const failed = (report && report.failed) || [];
+  const summary = "Applied — " +
+    (c.variablesCreated || 0) + " created, " +
+    (c.variablesUpdated || 0) + " updated, " +
+    (c.aliasesBound || 0) + " aliases, " +
+    (c.deleted || 0) + " deleted" +
+    (failed.length ? " · " + failed.length + " errors" : "");
+  sendToPlugin({ type: "notify", message: summary, error: failed.length > 0 });
+}
+
+function renderReportBanner(report) {
+  if (!report) return "";
+  const c = report.counts || {};
+  const failed = report.failed || [];
+  const notes = report.notes || [];
+  const total = (c.variablesCreated || 0) + (c.variablesUpdated || 0) + (c.deleted || 0) + (c.aliasesBound || 0);
+
+  const kind = failed.length === 0 ? "success" : (total > 0 ? "mixed" : "error");
+  const icon = kind === "success" ? "✓" : (kind === "mixed" ? "!" : "✕");
+  const head =
+    '<div><b>' + (kind === "success" ? "Applied successfully" : (kind === "mixed" ? "Applied with issues" : "Apply failed")) + '</b><br>' +
+    'Created ' + (c.variablesCreated || 0) +
+    ' · Updated ' + (c.variablesUpdated || 0) +
+    ' · Values set ' + (c.valuesSet || 0) +
+    ' · Aliases ' + (c.aliasesBound || 0) +
+    ' · Deleted ' + (c.deleted || 0) +
+    ' · Collections ' + (c.collectionsCreated || 0) +
+    ' · Modes ' + (c.modesCreated || 0) + '</div>';
+
+  let detail = "";
+  if (failed.length || notes.length) {
+    detail += "<ul>";
+    for (const f of failed.slice(0, 8)) detail += "<li><b>" + escapeHtml(f.where || "") + ":</b> " + escapeHtml(f.message || "") + "</li>";
+    for (const n of notes.slice(0, 4)) detail += "<li>" + escapeHtml(n) + "</li>";
+    if (failed.length > 8) detail += "<li>… and " + (failed.length - 8) + " more</li>";
+    detail += "</ul>";
+  }
+
+  return '<div class="apply-banner ' + kind + '"><span style="font-weight:700;">' + icon + '</span><div style="flex:1;">' + head + detail + '</div></div>';
+}
+
+/* ---------- Boot: ask plugin for saved config ---------- */
 
 /* ---------- Boot: ask plugin for saved config ---------- */
 sendToPlugin({ type: "get-git-config" });
