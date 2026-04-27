@@ -862,6 +862,62 @@ button {
   padding: 8px 10px;
   font-size: 11.5px;
 }
+
+/* Dropdown (Import / Export menus) */
+.dropdown { position: relative; flex: 1; min-width: 0; }
+.dropdown .source-btn { width: 100%; }
+.dropdown-trigger .caret {
+  margin-left: 2px;
+  opacity: 0.7;
+  transition: transform 120ms ease;
+}
+.dropdown.open .dropdown-trigger .caret { transform: rotate(180deg); }
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06);
+  padding: 4px;
+  z-index: 100;
+}
+.dropdown.open .dropdown-menu { display: block; }
+.dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.dropdown-item:hover:not([disabled]) { background: var(--bg-hover); }
+.dropdown-item[disabled] { opacity: 0.5; cursor: not-allowed; }
+.dropdown-item svg { flex-shrink: 0; margin-top: 1px; color: var(--text-secondary); }
+.dropdown-item:hover:not([disabled]) svg { color: var(--text); }
+.dropdown-item-title { font-size: 12px; font-weight: 500; line-height: 1.3; }
+.dropdown-item-desc {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  margin-top: 1px;
+  line-height: 1.35;
+}
+.dropdown-item-desc code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  padding: 0 3px;
+  background: var(--bg-secondary);
+  border-radius: 2px;
+}
 </style>
 </head>
 <body>
@@ -870,49 +926,99 @@ button {
 
   <!-- Top source bar -->
   <div class="source-bar">
-    <button class="source-btn primary" id="btn-read-figma">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 5.5A3.5 3.5 0 018.5 2H12v7H8.5A3.5 3.5 0 015 5.5z"/>
-        <path d="M12 2h3.5a3.5 3.5 0 110 7H12V2z"/>
-        <path d="M12 12.5a3.5 3.5 0 117 0 3.5 3.5 0 01-7 0z"/>
-        <path d="M5 19.5A3.5 3.5 0 018.5 16H12v3.5a3.5 3.5 0 11-7 0z"/>
-        <path d="M5 12.5A3.5 3.5 0 018.5 9H12v7H8.5A3.5 3.5 0 015 12.5z"/>
-      </svg>
-      <span id="btn-read-figma-label">Read Figma variables</span>
-    </button>
-    <button class="source-btn" id="btn-import">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/>
-        <line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      Import
-    </button>
-    <button class="source-btn" id="btn-pull" title="Pull DTCG file from configured Git repository">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 3v12"/>
-        <circle cx="18" cy="6" r="3"/>
-        <circle cx="6" cy="18" r="3"/>
-        <path d="M18 9a9 9 0 01-9 9"/>
-      </svg>
-      <span id="btn-pull-label">Pull</span>
-    </button>
-    <button class="source-btn" id="btn-apply" style="display:none;" title="Apply the loaded DTCG JSON to this Figma file's Variables">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 12h14"/>
-        <polyline points="12 5 19 12 12 19"/>
-      </svg>
-      <span id="btn-apply-label">Apply to Figma</span>
-    </button>
-    <button class="source-btn" id="btn-push-top" title="Commit and push DTCG output to configured Git repository">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M6 21v-12"/>
-        <circle cx="18" cy="18" r="3"/>
-        <circle cx="6" cy="6" r="3"/>
-        <path d="M18 15a9 9 0 00-9-9"/>
-      </svg>
-      <span id="btn-push-top-label">Push</span>
-    </button>
+    <div class="dropdown" id="dropdown-import">
+      <button class="source-btn dropdown-trigger primary" id="btn-import">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <span>Import</span>
+        <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="dropdown-menu" id="menu-import" role="menu">
+        <button class="dropdown-item" data-import="file" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <div>
+            <div class="dropdown-item-title">From file…</div>
+            <div class="dropdown-item-desc">Pick a local DTCG JSON file</div>
+          </div>
+        </button>
+        <button class="dropdown-item" data-import="paste" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+          <div>
+            <div class="dropdown-item-title">Paste JSON</div>
+            <div class="dropdown-item-desc">Paste tokens into the source view</div>
+          </div>
+        </button>
+        <button class="dropdown-item" data-import="pull" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3v12"/>
+            <circle cx="18" cy="6" r="3"/>
+            <circle cx="6" cy="18" r="3"/>
+            <path d="M18 9a9 9 0 01-9 9"/>
+          </svg>
+          <div>
+            <div class="dropdown-item-title">Pull from Git</div>
+            <div class="dropdown-item-desc" id="pull-target-hint">Set up Git in settings</div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div class="dropdown" id="dropdown-export">
+      <button class="source-btn dropdown-trigger" id="btn-export">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <span>Export</span>
+        <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="dropdown-menu" id="menu-export" role="menu">
+        <button class="dropdown-item" data-export="copy" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+          </svg>
+          <div>
+            <div class="dropdown-item-title">Copy</div>
+            <div class="dropdown-item-desc">Copy DTCG JSON to clipboard</div>
+          </div>
+        </button>
+        <button class="dropdown-item" data-export="download" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <div>
+            <div class="dropdown-item-title">Download file</div>
+            <div class="dropdown-item-desc">Save as <code>.dtcg.json</code></div>
+          </div>
+        </button>
+        <button class="dropdown-item" data-export="push" role="menuitem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 21v-12"/>
+            <circle cx="18" cy="18" r="3"/>
+            <circle cx="6" cy="6" r="3"/>
+            <path d="M18 15a9 9 0 00-9-9"/>
+          </svg>
+          <div>
+            <div class="dropdown-item-title">Push to Git</div>
+            <div class="dropdown-item-desc" id="push-target-hint">Set up Git in settings</div>
+          </div>
+        </button>
+      </div>
+    </div>
+
     <button class="icon-only-btn" id="btn-settings" title="Git settings">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
@@ -1843,7 +1949,6 @@ window.addEventListener("message", (e) => {
     if (typeof handleApplyReport === "function") handleApplyReport(msg.report);
   } else if (msg.type === "error") {
     showParseError("Plugin error — " + msg.message);
-    $("btn-read-figma-label").textContent = "Read Figma variables";
   } else if (msg.type === "git-config") {
     gitState.config = msg.config || null;
     updateGitUI();
@@ -1854,14 +1959,74 @@ window.addEventListener("message", (e) => {
 
 /* ---------- actions ---------- */
 
-$("btn-read-figma").addEventListener("click", () => {
-  $("btn-read-figma-label").innerHTML = '<span class="spinner" style="border-top-color: var(--brand-text);"></span> Reading…';
+/* Dropdown menus (Import / Export) */
+let pendingExportAction = null;
+
+function setupDropdown(rootId) {
+  const root = $(rootId);
+  if (!root) return;
+  const trigger = root.querySelector(".dropdown-trigger");
+  const menu = root.querySelector(".dropdown-menu");
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = root.classList.contains("open");
+    document.querySelectorAll(".dropdown.open").forEach(d => d.classList.remove("open"));
+    if (!wasOpen) root.classList.add("open");
+  });
+  menu.addEventListener("click", (e) => e.stopPropagation());
+}
+setupDropdown("dropdown-import");
+setupDropdown("dropdown-export");
+document.addEventListener("click", () => {
+  document.querySelectorAll(".dropdown.open").forEach(d => d.classList.remove("open"));
+});
+
+/* Import dropdown items */
+$("menu-import").addEventListener("click", (e) => {
+  const item = e.target.closest(".dropdown-item");
+  if (!item) return;
+  $("dropdown-import").classList.remove("open");
+  const action = item.dataset.import;
+  if (action === "file") {
+    $("file-input").click();
+  } else if (action === "paste") {
+    state.sourceType = "import";
+    showImportStructure();
+    switchTab("source");
+    setTimeout(() => $("input-text").focus(), 50);
+  } else if (action === "pull") {
+    pullFromGit();
+  }
+});
+
+/* Export dropdown items */
+$("menu-export").addEventListener("click", (e) => {
+  const item = e.target.closest(".dropdown-item");
+  if (!item) return;
+  $("dropdown-export").classList.remove("open");
+  const action = item.dataset.export;
+  if (action === "push" && !isConfigValid(gitState.config)) {
+    openSettings();
+    return;
+  }
+  startExport(action);
+});
+
+function startExport(action) {
+  pendingExportAction = action;
   state.sourceType = "figma";
   state.filename = "figma-variables";
   sendToPlugin({ type: "read-variables" });
-});
+}
 
-$("btn-import").addEventListener("click", () => $("file-input").click());
+function showImportStructure() {
+  // Reveal tabs so the Source tab is reachable even before any paste.
+  // Summary stays hidden until there's something to summarize.
+  $("empty-state").style.display = "none";
+  $("tabs").style.display = "flex";
+  const srcTab = document.querySelector('.tab[data-tab="source"]');
+  if (srcTab) srcTab.style.display = "block";
+}
 
 $("file-input").addEventListener("change", (e) => {
   const f = e.target.files && e.target.files[0];
@@ -1906,6 +2071,15 @@ function switchTab(name) {
   $("view-issues").style.display = name === "issues" ? "block" : "none";
   $("view-source").style.display = name === "source" ? "block" : "none";
   $("view-apply").style.display  = name === "apply"  ? "block" : "none";
+
+  // Lazy-fetch the apply diff the first time the user opens the tab
+  if (name === "apply"
+      && state.sourceType === "import"
+      && state.conversion
+      && !applyState.plan
+      && !applyState.pending) {
+    startApplyDiff();
+  }
 }
 
 /* copy + download */
@@ -1945,10 +2119,10 @@ $("btn-download").addEventListener("click", () => {
    ============================================================ */
 
 function handleFigmaVariables(data) {
-  $("btn-read-figma-label").textContent = "Read Figma variables";
   const meta = data._meta || {};
   if (!meta.variableCount) {
     showParseError("No local variables found in this Figma file.");
+    pendingExportAction = null;
     return;
   }
   state.sourceType = "figma";
@@ -1957,6 +2131,15 @@ function handleFigmaVariables(data) {
   // Remove _meta before converting
   const { _meta, ...input } = data;
   runConversion(input);
+
+  // Auto-execute the pending export action (Copy / Download / Push) after the read.
+  if (pendingExportAction) {
+    const action = pendingExportAction;
+    pendingExportAction = null;
+    if (action === "copy") $("btn-copy").click();
+    else if (action === "download") $("btn-download").click();
+    else if (action === "push") openPushDialog();
+  }
 }
 
 function processInputText(text, opts = {}) {
@@ -1986,7 +2169,13 @@ function runConversion(input, opts = {}) {
     return;
   }
   render();
-  if (!opts.stayOnSourceTab) switchTab("output");
+  if (opts.stayOnSourceTab) return;
+  if (state.sourceType === "import") {
+    // Imports go straight to the Apply diff (one-shot file/pull).
+    startApplyDiff();
+  } else {
+    switchTab("output");
+  }
 }
 
 function showParseError(msg) {
@@ -2049,8 +2238,8 @@ function render() {
   // Refresh Push button — depends on both conversion presence and git config
   if (typeof refreshPushButtonVisibility === "function") refreshPushButtonVisibility();
 
-  // Refresh Apply button — only meaningful when the DTCG came from outside Figma
-  if (typeof refreshApplyButtonVisibility === "function") refreshApplyButtonVisibility();
+  // Refresh Apply tab — only meaningful when the DTCG came from outside Figma
+  if (typeof refreshApplyTabVisibility === "function") refreshApplyTabVisibility();
 }
 
 function renderIssues(val) {
@@ -2473,8 +2662,6 @@ function formatGitError(e, cfg) {
 
 /* ---------- Pull ---------- */
 
-$("btn-pull").addEventListener("click", pullFromGit);
-
 async function pullFromGit() {
   if (!isConfigValid(gitState.config)) {
     openSettings();
@@ -2482,9 +2669,7 @@ async function pullFromGit() {
     return;
   }
   const cfg = gitState.config;
-  const label = $("btn-pull-label");
-  const original = label.textContent;
-  label.innerHTML = '<span class="spinner"></span> Pulling…';
+  setFooterStatus("Pulling from " + configSummary(cfg) + "…", "");
 
   try {
     const provider = getProvider(cfg);
@@ -2506,15 +2691,12 @@ async function pullFromGit() {
       : formatGitError(e, cfg);
     showParseError("Pull failed — " + msg);
     setFooterStatus("Pull failed — " + msg, "git-error");
-  } finally {
-    label.textContent = original;
   }
 }
 
 /* ---------- Push ---------- */
 
 $("btn-push").addEventListener("click", openPushDialog);
-$("btn-push-top").addEventListener("click", openPushDialog);
 $("push-close").addEventListener("click", closePushDialog);
 $("push-cancel").addEventListener("click", closePushDialog);
 $("push-confirm").addEventListener("click", executePush);
@@ -2624,24 +2806,27 @@ function setPushResult(kind, message) {
 function updateGitUI() {
   const configured = isConfigValid(gitState.config);
   $("btn-settings").classList.toggle("configured", configured);
-  $("btn-pull").disabled = false; // always clickable; opens settings if not configured
   if (configured) {
     setFooterStatus("Git: " + configSummary(gitState.config), "git-connected");
+    const summary = configSummary(gitState.config);
+    $("pull-target-hint").textContent = summary;
+    $("push-target-hint").textContent = summary;
   } else {
     setFooterStatus("Runs locally — no data sent anywhere", "");
+    $("pull-target-hint").textContent = "Set up Git in settings";
+    $("push-target-hint").textContent = "Set up Git in settings";
   }
-  // Show/hide Push button in output toolbar based on config + output presence
   refreshPushButtonVisibility();
 }
 
 function refreshPushButtonVisibility() {
   const configured = isConfigValid(gitState.config);
-  // Top source-bar Push: visible whenever Git is configured (click handles "no output yet" case)
-  $("btn-push-top").style.display = configured ? "inline-flex" : "none";
   // Output-toolbar Push: only when there's output to push
   const btn = $("btn-push");
-  const show = configured && state.conversion;
-  btn.style.display = show ? "inline-flex" : "none";
+  if (btn) {
+    const show = configured && state.conversion;
+    btn.style.display = show ? "inline-flex" : "none";
+  }
 }
 
 function setFooterStatus(text, cssClass) {
@@ -2667,32 +2852,21 @@ const COMPOSITE_TYPES = new Set(["typography", "shadow", "border", "gradient", "
 
 /* ---------- visibility ---------- */
 
-function refreshApplyButtonVisibility() {
-  const btn = $("btn-apply");
-  if (!btn) return;
-  // Only meaningful when the loaded DTCG didn't originate from this Figma file's variables.
+// The Apply tab is shown whenever there's an imported DTCG conversion ready.
+function refreshApplyTabVisibility() {
+  const tab = document.querySelector('.tab[data-tab="apply"]');
+  if (!tab) return;
   const eligible = state.sourceType === "import" && state.conversion;
-  btn.style.display = eligible ? "inline-flex" : "none";
+  tab.style.display = eligible ? "block" : "none";
 }
 
-$("btn-apply").addEventListener("click", () => {
-  if (!state.conversion) {
-    sendToPlugin({ type: "notify", message: "Load a DTCG JSON first (Import or Pull).", error: true });
-    return;
-  }
+function startApplyDiff() {
   applyState.pending = "reading";
-  showApplyTab();
+  refreshApplyTabVisibility();
+  switchTab("apply");
   $("apply-content").innerHTML =
     '<div class="apply-loading"><span class="spinner"></span> Reading Figma variables…</div>';
   sendToPlugin({ type: "read-variables", purpose: "apply" });
-});
-
-function showApplyTab() {
-  $("empty-state").style.display = "none";
-  $("tabs").style.display = "flex";
-  const tab = document.querySelector('.tab[data-tab="apply"]');
-  tab.style.display = "block";
-  switchTab("apply");
 }
 
 /* ---------- routing the variables-data message ---------- */
