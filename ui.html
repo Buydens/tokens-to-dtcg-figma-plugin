@@ -5,6 +5,151 @@
 <title>Tokens → DTCG</title>
 <style>
 /* ====================================================================
+   Apply (DTCG → Figma) view styles — appended near the bottom by intent
+   are placed here so they share the cascade and theme variables
+   ==================================================================== */
+.apply-pane { padding: 12px 16px 24px; }
+.apply-loading { padding: 24px; color: var(--text-secondary); display:flex; align-items:center; gap:8px; font-size:12px; }
+.apply-summary {
+  display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;
+  padding: 10px 12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary);
+}
+.apply-chip {
+  display:inline-flex; align-items:center; gap:6px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 11px; font-weight:500;
+  background: var(--bg-tertiary); color: var(--text);
+}
+.apply-chip b { font-weight:600; }
+.apply-chip.create { background: var(--ok-bg); color: var(--ok); }
+.apply-chip.update { background: var(--info-bg); color: var(--info); }
+.apply-chip.unchanged { background: var(--bg-tertiary); color: var(--text-secondary); }
+.apply-chip.skipped { background: var(--warning-bg); color: var(--warning); }
+.apply-chip.delete { background: var(--error-bg); color: var(--error); }
+
+.apply-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  background: var(--bg);
+}
+.apply-section-header {
+  display: flex; align-items:center; gap:10px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  font-size: 11px; font-weight:600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.apply-section-header:hover { background: var(--bg-hover); }
+.apply-section-header .caret {
+  transition: transform 0.15s ease;
+  color: var(--text-tertiary);
+}
+.apply-section.expanded .caret { transform: rotate(90deg); }
+.apply-section-header .label-tag {
+  margin-left:auto;
+  font-weight:500; text-transform:none; letter-spacing:0;
+  font-size: 11px;
+}
+.apply-section-body { display: none; max-height: 320px; overflow:auto; }
+.apply-section.expanded .apply-section-body { display:block; }
+
+.apply-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.apply-row:first-child { border-top: 0; }
+.apply-row .checkbox-col { padding-top: 2px; }
+.apply-row .path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text);
+  word-break: break-all;
+}
+.apply-row .meta {
+  color: var(--text-secondary);
+  margin-top: 2px;
+  font-size: 10.5px;
+}
+.apply-row .type-tag {
+  display:inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+.apply-row .value-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  text-align: right;
+  padding-top: 1px;
+}
+.apply-row .value-cell .swatch {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.apply-row.skip .reason {
+  color: var(--warning);
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+.apply-diff {
+  margin-top: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+}
+.apply-diff .before { color: var(--text-tertiary); text-decoration: line-through; }
+.apply-diff .arrow { color: var(--text-tertiary); margin: 0 6px; }
+.apply-diff .after { color: var(--text); }
+
+.apply-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.apply-actions {
+  position: sticky; bottom: 0;
+  display:flex; gap:8px; align-items:center;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  margin: 12px -16px -24px;
+}
+.apply-actions .spacer { flex: 1; }
+.apply-actions .hint { color: var(--text-tertiary); font-size: 11px; }
+.apply-actions .btn {
+  font-size: 11px; font-weight: 500;
+  padding: 6px 12px; border-radius: 5px;
+  border: 1px solid var(--border-strong); background: var(--bg);
+}
+.apply-actions .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.apply-actions .btn.primary { background: var(--brand); color: var(--brand-text); border-color: var(--brand); }
+.apply-actions .btn.primary[disabled] { background: var(--bg-tertiary); color: var(--text-tertiary); border-color: var(--border); }
+.apply-toggle-all {
+  background: none; border: 0; padding: 0;
+  font-size: 10px; text-decoration: underline;
+  color: var(--text-secondary); cursor: pointer;
+  margin-left: 8px;
+}
+
+/* ====================================================================
    Theme — adapts to Figma dark/light via CSS vars
    ==================================================================== */
 :root {
@@ -730,6 +875,13 @@ button {
       </svg>
       <span id="btn-pull-label">Pull</span>
     </button>
+    <button class="source-btn" id="btn-apply" style="display:none;" title="Apply the loaded DTCG JSON to this Figma file's Variables">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14"/>
+        <polyline points="12 5 19 12 12 19"/>
+      </svg>
+      <span id="btn-apply-label">Apply to Figma</span>
+    </button>
     <button class="source-btn" id="btn-push-top" title="Commit and push DTCG output to configured Git repository">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6 21v-12"/>
@@ -755,6 +907,9 @@ button {
       Validation<span class="count" id="issue-count">0</span>
     </button>
     <button class="tab" data-tab="source">Source</button>
+    <button class="tab" data-tab="apply" style="display:none;">
+      Apply<span class="count" id="apply-count" style="display:none;">0</span>
+    </button>
   </div>
 
   <!-- Summary -->
@@ -822,6 +977,11 @@ button {
     <!-- Issues view -->
     <div id="view-issues" style="display:none; height:100%;">
       <div class="issues" id="issues-list"></div>
+    </div>
+
+    <!-- Apply (DTCG → Figma) view -->
+    <div id="view-apply" style="display:none; height:100%; overflow:auto;">
+      <div id="apply-content" class="apply-pane"></div>
     </div>
 
     <!-- Source (import) view -->
@@ -1629,7 +1789,11 @@ window.addEventListener("message", (e) => {
   const msg = e.data && e.data.pluginMessage;
   if (!msg) return;
   if (msg.type === "variables-data") {
-    handleFigmaVariables(msg.data);
+    if (typeof routeVariablesData === "function") {
+      routeVariablesData(msg.data);
+    } else {
+      handleFigmaVariables(msg.data);
+    }
   } else if (msg.type === "error") {
     showParseError("Plugin error — " + msg.message);
     $("btn-read-figma-label").textContent = "Read Figma variables";
@@ -1694,6 +1858,7 @@ function switchTab(name) {
   $("view-output").style.display = name === "output" ? "block" : "none";
   $("view-issues").style.display = name === "issues" ? "block" : "none";
   $("view-source").style.display = name === "source" ? "block" : "none";
+  $("view-apply").style.display  = name === "apply"  ? "block" : "none";
 }
 
 /* copy + download */
@@ -1836,6 +2001,9 @@ function render() {
 
   // Refresh Push button — depends on both conversion presence and git config
   if (typeof refreshPushButtonVisibility === "function") refreshPushButtonVisibility();
+
+  // Refresh Apply button — only meaningful when the DTCG came from outside Figma
+  if (typeof refreshApplyButtonVisibility === "function") refreshApplyButtonVisibility();
 }
 
 function renderIssues(val) {
@@ -2433,6 +2601,582 @@ function setFooterStatus(text, cssClass) {
   const el = $("footer-status");
   el.textContent = text;
   el.className = cssClass || "";
+}
+
+/* ============================================================
+   APPLY (DTCG → Figma) — Stage 1: load + diff preview only.
+   No actual Figma writes happen here yet; that's Stage 2.
+   ============================================================ */
+
+const applyState = {
+  pending: null,           // null | "reading"
+  figmaSnapshot: null,     // last variables snapshot from code.js
+  plan: null,              // { creates, updates, unchanged, skipped, willDelete }
+  selectedDeletes: new Set(),
+  expanded: new Set(["create", "update", "skipped"]) // sections open by default
+};
+
+const COMPOSITE_TYPES = new Set(["typography", "shadow", "border", "gradient", "transition"]);
+
+/* ---------- visibility ---------- */
+
+function refreshApplyButtonVisibility() {
+  const btn = $("btn-apply");
+  if (!btn) return;
+  // Only meaningful when the loaded DTCG didn't originate from this Figma file's variables.
+  const eligible = state.sourceType === "import" && state.conversion;
+  btn.style.display = eligible ? "inline-flex" : "none";
+}
+
+$("btn-apply").addEventListener("click", () => {
+  if (!state.conversion) {
+    sendToPlugin({ type: "notify", message: "Load a DTCG JSON first (Import or Pull).", error: true });
+    return;
+  }
+  applyState.pending = "reading";
+  showApplyTab();
+  $("apply-content").innerHTML =
+    '<div class="apply-loading"><span class="spinner"></span> Reading Figma variables…</div>';
+  sendToPlugin({ type: "read-variables", purpose: "apply" });
+});
+
+function showApplyTab() {
+  $("empty-state").style.display = "none";
+  $("tabs").style.display = "flex";
+  const tab = document.querySelector('.tab[data-tab="apply"]');
+  tab.style.display = "block";
+  switchTab("apply");
+}
+
+/* ---------- routing the variables-data message ---------- */
+
+function routeVariablesData(data) {
+  if (applyState.pending === "reading") {
+    applyState.pending = null;
+    applyState.figmaSnapshot = data;
+    try {
+      computeAndRenderPlan();
+    } catch (e) {
+      $("apply-content").innerHTML =
+        '<div class="apply-empty">Could not compute diff — ' + escapeHtml(e.message) + '</div>';
+    }
+  } else {
+    handleFigmaVariables(data);
+  }
+}
+
+/* ---------- DTCG flatten ---------- */
+
+function flattenDtcg(root) {
+  const out = [];
+  if (!isPlainObject(root)) return out;
+  for (const [colName, colNode] of Object.entries(root)) {
+    if (!isPlainObject(colNode)) continue;
+    if (colName.startsWith("$")) continue;
+    const modes = detectModeBuckets(colNode);
+    if (modes) {
+      for (const [modeName, modeRoot] of Object.entries(modes)) {
+        walkDtcg(modeRoot, [], (path, token) => {
+          out.push({ collection: colName, mode: modeName, path: path.join("/"), token });
+        });
+      }
+    } else {
+      walkDtcg(colNode, [], (path, token) => {
+        out.push({ collection: colName, mode: "Default", path: path.join("/"), token });
+      });
+    }
+  }
+  return out;
+}
+
+// Heuristic: if every top-level child is a non-token group AND those subtrees share
+// at least 80% of their leaf paths, treat them as modes. Conservative on purpose.
+function detectModeBuckets(colNode) {
+  const childGroups = Object.entries(colNode).filter(([k, v]) =>
+    !k.startsWith("$") && isPlainObject(v) && !("$value" in v)
+  );
+  if (childGroups.length < 2) return null;
+  // Reject if there are token leaves at the top level alongside the candidate buckets
+  const hasTopLevelTokens = Object.entries(colNode).some(([k, v]) =>
+    !k.startsWith("$") && isPlainObject(v) && "$value" in v
+  );
+  if (hasTopLevelTokens) return null;
+  const sigs = childGroups.map(([_, v]) => leafPathSignature(v));
+  if (sigs.some(s => s.size === 0)) return null;
+  let intersect = new Set(sigs[0]);
+  for (let i = 1; i < sigs.length; i++) {
+    intersect = new Set([...intersect].filter(p => sigs[i].has(p)));
+  }
+  if (intersect.size === 0) return null;
+  for (const s of sigs) {
+    const overlap = [...intersect].filter(p => s.has(p)).length / intersect.size;
+    if (overlap < 0.8) return null;
+  }
+  return Object.fromEntries(childGroups);
+}
+
+function leafPathSignature(node, prefix = [], out = new Set()) {
+  if (!isPlainObject(node)) return out;
+  for (const [k, v] of Object.entries(node)) {
+    if (k.startsWith("$") || !isPlainObject(v)) continue;
+    if ("$value" in v) out.add([...prefix, k].join("/"));
+    else leafPathSignature(v, [...prefix, k], out);
+  }
+  return out;
+}
+
+function walkDtcg(node, path, cb) {
+  if (!isPlainObject(node)) return;
+  for (const [k, v] of Object.entries(node)) {
+    if (k.startsWith("$") || !isPlainObject(v)) continue;
+    if ("$value" in v) cb([...path, k], v);
+    else walkDtcg(v, [...path, k], cb);
+  }
+}
+
+/* ---------- Figma flatten ---------- */
+
+function flattenFigma(snapshot) {
+  const out = [];
+  if (!snapshot) return out;
+  const collections = snapshot.variableCollections || {};
+  const variables = snapshot.variables || {};
+  for (const v of Object.values(variables)) {
+    const col = collections[v.variableCollectionId];
+    if (!col) continue;
+    const path = String(v.name || "");
+    for (const [modeId, modeName] of Object.entries(col.modes || {})) {
+      const value = v.valuesByMode ? v.valuesByMode[modeId] : undefined;
+      out.push({
+        collection: col.name,
+        mode: modeName,
+        path,
+        type: v.resolvedType,
+        value,
+        description: v.description || "",
+        scopes: v.scopes || []
+      });
+    }
+  }
+  return out;
+}
+
+/* ---------- inference (DTCG token → intended Figma var shape) ---------- */
+
+function inferImport(d) {
+  const token = d.token;
+  const $type = token.$type || guessDtcgType(token.$value);
+  const figmaType = mapToFigmaType($type);
+  return {
+    $type,
+    figmaType,
+    value: token.$value,
+    scopes: defaultScopesFor($type, d.path),
+    description: token.$description || ""
+  };
+}
+
+function guessDtcgType(v) {
+  if (typeof v === "boolean") return "boolean";
+  if (typeof v === "number") return "number";
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (/^\{[^}]+\}$/.test(t)) return "alias";
+    if (/^#[0-9a-f]{3,8}$/i.test(t)) return "color";
+    if (/^-?\d+(\.\d+)?(px|rem|em)$/i.test(t)) return "dimension";
+    return "string";
+  }
+  return "string";
+}
+
+function mapToFigmaType($type) {
+  if ($type === "color") return "COLOR";
+  if ($type === "boolean") return "BOOLEAN";
+  if ($type === "number" || $type === "dimension" || $type === "duration" || $type === "fontWeight") return "FLOAT";
+  if ($type === "alias") return "ALIAS";
+  return "STRING";
+}
+
+function defaultScopesFor($type, pathStr) {
+  const p = (pathStr || "").toLowerCase();
+  if ($type === "color") {
+    if (/text|fg|foreground/.test(p)) return ["TEXT_FILL", "ALL_FILLS"];
+    if (/stroke|border/.test(p)) return ["STROKE_COLOR"];
+    return ["ALL_FILLS", "STROKE_COLOR"];
+  }
+  if ($type === "dimension") {
+    if (/border|stroke/.test(p)) return ["STROKE_FLOAT"];
+    if (/radius/.test(p)) return ["CORNER_RADIUS"];
+    if (/space|gap|padding/.test(p)) return ["GAP"];
+    return ["WIDTH_HEIGHT", "GAP", "CORNER_RADIUS"];
+  }
+  if ($type === "fontFamily") return ["FONT_FAMILY"];
+  if ($type === "fontWeight") return ["FONT_WEIGHT"];
+  return ["ALL_SCOPES"];
+}
+
+/* ---------- value parsing & comparison ---------- */
+
+function isAliasString(v) {
+  return typeof v === "string" && /^\{[^}]+\}$/.test(v.trim());
+}
+
+function aliasPath(v) {
+  return v.trim().slice(1, -1);
+}
+
+function parseHexToRgba(v) {
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  if (t[0] !== "#") return null;
+  let hex = t.slice(1);
+  if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+  if (hex.length === 4) hex = hex.split("").map(c => c + c).join("");
+  if (!/^[0-9a-f]{6}$|^[0-9a-f]{8}$/.test(hex)) return null;
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  const a = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
+  return { r, g, b, a };
+}
+
+function rgbaToHexDisplay(c) {
+  if (!c || typeof c !== "object") return "—";
+  const to = n => Math.round(Math.max(0, Math.min(1, n)) * 255).toString(16).padStart(2, "0");
+  const a = c.a == null ? 1 : c.a;
+  return "#" + to(c.r) + to(c.g) + to(c.b) + (a < 1 ? to(a) : "");
+}
+
+function dimToFloat(v) {
+  if (v == null) return null;
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const t = v.trim();
+    const m = /^(-?\d+(?:\.\d+)?)(px|em|rem|ms|s)?$/i.exec(t);
+    if (!m) return null;
+    let n = Number(m[1]);
+    const unit = (m[2] || "").toLowerCase();
+    if (unit === "rem" || unit === "em") n *= 16;
+    if (unit === "s") n *= 1000;
+    return n;
+  }
+  return null;
+}
+
+// Returns a Figma-comparable value for a DTCG token, or { kind:'alias', path } / { skip:'reason' }.
+function normalizeForFigma(inferred) {
+  const t = inferred.figmaType;
+  const v = inferred.value;
+  if (isAliasString(v)) return { kind: "alias", path: aliasPath(v) };
+  if (t === "COLOR") {
+    const c = parseHexToRgba(v);
+    return c ? c : { skip: "Could not parse color value" };
+  }
+  if (t === "FLOAT") {
+    const n = dimToFloat(v);
+    return n == null ? { skip: "Could not parse number/dimension" } : n;
+  }
+  if (t === "BOOLEAN") return Boolean(v);
+  return v == null ? "" : String(v);
+}
+
+function valuesEqual(desired, current, type) {
+  if (desired == null || current == null) return desired === current;
+  if (desired && desired.kind === "alias") {
+    if (current && current.type === "VARIABLE_ALIAS") {
+      // Stage 1: alias-equality without an idToFullPath map is heuristic; treat as equal
+      // so we don't spam the diff with false positives. Stage 2 will resolve properly.
+      return true;
+    }
+    return false;
+  }
+  if (type === "COLOR") {
+    if (typeof desired !== "object" || typeof current !== "object") return false;
+    const eq = (x, y) => Math.abs((x ?? 0) - (y ?? 0)) < 1 / 512;
+    return eq(desired.r, current.r) && eq(desired.g, current.g) && eq(desired.b, current.b)
+      && eq(desired.a == null ? 1 : desired.a, current.a == null ? 1 : current.a);
+  }
+  if (type === "FLOAT") return Number(desired) === Number(current);
+  if (type === "BOOLEAN") return Boolean(desired) === Boolean(current);
+  return String(desired) === String(current);
+}
+
+/* ---------- plan computation ---------- */
+
+function isSkippedToken(token) {
+  if (!token) return "Empty token";
+  const t = token.$type;
+  if (t && COMPOSITE_TYPES.has(t)) return 'Composite "' + t + '" — no Figma Variable equivalent';
+  if (token.$value && typeof token.$value === "object" && !Array.isArray(token.$value)) {
+    return "Object-shaped value — composite or unsupported";
+  }
+  if (token.$value === undefined || token.$value === null) return "Missing $value";
+  return null;
+}
+
+function computePlan(dtcg, snapshot) {
+  const desired = flattenDtcg(dtcg);
+  const current = flattenFigma(snapshot);
+  const keyOf = e => e.collection + "::" + e.mode + "::" + e.path;
+  const currentMap = new Map();
+  for (const e of current) currentMap.set(keyOf(e), e);
+
+  const creates = [];
+  const updates = [];
+  const unchanged = [];
+  const skipped = [];
+  const seen = new Set();
+
+  for (const d of desired) {
+    const skip = isSkippedToken(d.token);
+    if (skip) {
+      skipped.push({ ...d, reason: skip });
+      continue;
+    }
+    const inferred = inferImport(d);
+    const desiredFigma = normalizeForFigma(inferred);
+    if (desiredFigma && desiredFigma.skip) {
+      skipped.push({ ...d, reason: desiredFigma.skip });
+      continue;
+    }
+    const k = keyOf(d);
+    seen.add(k);
+    const existing = currentMap.get(k);
+    if (!existing) {
+      creates.push({ ...d, inferred, desiredFigma });
+    } else if (valuesEqual(desiredFigma, existing.value, existing.type)) {
+      unchanged.push({ ...d, inferred, existing });
+    } else {
+      updates.push({ ...d, inferred, desiredFigma, existing });
+    }
+  }
+
+  // willDelete only within touched collections
+  const desiredCollections = new Set(desired.map(d => d.collection));
+  const willDelete = [];
+  for (const c of current) {
+    if (!desiredCollections.has(c.collection)) continue;
+    if (seen.has(keyOf(c))) continue;
+    willDelete.push(c);
+  }
+
+  return { creates, updates, unchanged, skipped, willDelete };
+}
+
+function computeAndRenderPlan() {
+  applyState.plan = computePlan(state.conversion.data, applyState.figmaSnapshot);
+  applyState.selectedDeletes = new Set();
+  renderPlan();
+}
+
+/* ---------- rendering ---------- */
+
+function renderPlan() {
+  const plan = applyState.plan;
+  if (!plan) return;
+  const totals = {
+    create: plan.creates.length,
+    update: plan.updates.length,
+    unchanged: plan.unchanged.length,
+    skipped: plan.skipped.length,
+    delete: plan.willDelete.length
+  };
+
+  const summary = `
+    <div class="apply-summary">
+      <span class="apply-chip create"><b>${totals.create}</b> create</span>
+      <span class="apply-chip update"><b>${totals.update}</b> update</span>
+      <span class="apply-chip unchanged"><b>${totals.unchanged}</b> unchanged</span>
+      <span class="apply-chip skipped"><b>${totals.skipped}</b> skipped</span>
+      <span class="apply-chip delete"><b>${totals.delete}</b> would delete</span>
+    </div>`;
+
+  const sections =
+    sectionHTML("create", "Create", plan.creates, renderCreateRow) +
+    sectionHTML("update", "Update", plan.updates, renderUpdateRow) +
+    sectionHTML("delete", "Will delete", plan.willDelete, renderDeleteRow,
+      plan.willDelete.length > 0
+        ? '<button class="apply-toggle-all" id="apply-toggle-all-deletes">Select all</button>'
+        : "") +
+    sectionHTML("skipped", "Skipped", plan.skipped, renderSkipRow) +
+    sectionHTML("unchanged", "Unchanged", plan.unchanged, renderUnchangedRow);
+
+  const actions = `
+    <div class="apply-actions">
+      <span class="hint">Stage 1 preview — applying to Figma is not wired up yet.</span>
+      <span class="spacer"></span>
+      <button class="btn" id="apply-recompute">Recompute</button>
+      <button class="btn primary" id="apply-go" disabled title="Stage 2 will enable this">Apply…</button>
+    </div>`;
+
+  $("apply-content").innerHTML = summary + sections + actions;
+  attachPlanHandlers();
+
+  // Show apply count badge on the tab
+  const cnt = totals.create + totals.update + totals.delete;
+  const badge = $("apply-count");
+  badge.textContent = cnt;
+  badge.style.display = cnt > 0 ? "inline-flex" : "none";
+}
+
+function sectionHTML(key, label, items, rowFn, extraHeader = "") {
+  if (!items || items.length === 0) {
+    return `
+      <div class="apply-section ${applyState.expanded.has(key) ? "expanded" : ""}" data-section="${key}">
+        <div class="apply-section-header">
+          <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+          <span>${label}</span>
+          <span class="label-tag">0</span>
+        </div>
+        <div class="apply-section-body"><div class="apply-empty">Nothing in this category.</div></div>
+      </div>`;
+  }
+  const rows = items.map(rowFn).join("");
+  return `
+    <div class="apply-section ${applyState.expanded.has(key) ? "expanded" : ""}" data-section="${key}">
+      <div class="apply-section-header">
+        <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        <span>${label}</span>
+        <span class="label-tag">${items.length}${extraHeader ? "" : ""}</span>
+        ${extraHeader}
+      </div>
+      <div class="apply-section-body">${rows}</div>
+    </div>`;
+}
+
+function rowMeta(e) {
+  return `<span class="type-tag">${escapeHtml(e.collection)}</span>` +
+         `<span class="type-tag">${escapeHtml(e.mode)}</span>`;
+}
+
+function renderCreateRow(e) {
+  return `
+    <div class="apply-row">
+      <div class="checkbox-col"></div>
+      <div>
+        <div class="path">${escapeHtml(e.path)}</div>
+        <div class="meta">${rowMeta(e)}<span class="type-tag">${escapeHtml(e.inferred.figmaType)}</span></div>
+      </div>
+      <div class="value-cell">${valueDisplay(e.desiredFigma, e.inferred.figmaType)}</div>
+    </div>`;
+}
+
+function renderUpdateRow(e) {
+  return `
+    <div class="apply-row">
+      <div class="checkbox-col"></div>
+      <div>
+        <div class="path">${escapeHtml(e.path)}</div>
+        <div class="meta">${rowMeta(e)}<span class="type-tag">${escapeHtml(e.existing.type)}</span></div>
+        <div class="apply-diff">
+          <span class="before">${valueDisplay(e.existing.value, e.existing.type)}</span>
+          <span class="arrow">→</span>
+          <span class="after">${valueDisplay(e.desiredFigma, e.inferred.figmaType)}</span>
+        </div>
+      </div>
+      <div class="value-cell"></div>
+    </div>`;
+}
+
+function renderUnchangedRow(e) {
+  return `
+    <div class="apply-row">
+      <div class="checkbox-col"></div>
+      <div>
+        <div class="path">${escapeHtml(e.path)}</div>
+        <div class="meta">${rowMeta(e)}</div>
+      </div>
+      <div class="value-cell">${valueDisplay(e.existing.value, e.existing.type)}</div>
+    </div>`;
+}
+
+function renderSkipRow(e) {
+  return `
+    <div class="apply-row skip">
+      <div class="checkbox-col"></div>
+      <div>
+        <div class="path">${escapeHtml(e.path)}</div>
+        <div class="meta">${rowMeta(e)}<span class="type-tag">${escapeHtml(e.token && e.token.$type || "?")}</span></div>
+        <div class="reason">${escapeHtml(e.reason)}</div>
+      </div>
+      <div class="value-cell"></div>
+    </div>`;
+}
+
+function renderDeleteRow(e) {
+  const id = "del::" + e.collection + "::" + e.mode + "::" + e.path;
+  const checked = applyState.selectedDeletes.has(id) ? "checked" : "";
+  return `
+    <div class="apply-row">
+      <div class="checkbox-col">
+        <input type="checkbox" data-delete-id="${escapeAttr(id)}" ${checked} />
+      </div>
+      <div>
+        <div class="path">${escapeHtml(e.path)}</div>
+        <div class="meta">${rowMeta(e)}<span class="type-tag">${escapeHtml(e.type)}</span></div>
+      </div>
+      <div class="value-cell">${valueDisplay(e.value, e.type)}</div>
+    </div>`;
+}
+
+function valueDisplay(v, type) {
+  if (v == null) return "—";
+  if (v && v.kind === "alias") return "→ {" + escapeHtml(v.path) + "}";
+  if (v && v.type === "VARIABLE_ALIAS") return "→ alias";
+  if (type === "COLOR" && typeof v === "object" && "r" in v) {
+    const hex = rgbaToHexDisplay(v);
+    return '<span class="swatch" style="background:' + hex + '"></span>' + escapeHtml(hex);
+  }
+  if (typeof v === "object") return escapeHtml(JSON.stringify(v));
+  return escapeHtml(String(v));
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+
+function attachPlanHandlers() {
+  document.querySelectorAll(".apply-section").forEach(sec => {
+    const head = sec.querySelector(".apply-section-header");
+    head.addEventListener("click", () => {
+      const key = sec.dataset.section;
+      if (sec.classList.contains("expanded")) {
+        sec.classList.remove("expanded");
+        applyState.expanded.delete(key);
+      } else {
+        sec.classList.add("expanded");
+        applyState.expanded.add(key);
+      }
+    });
+  });
+  document.querySelectorAll('input[data-delete-id]').forEach(cb => {
+    cb.addEventListener("change", (e) => {
+      const id = e.target.getAttribute("data-delete-id");
+      if (e.target.checked) applyState.selectedDeletes.add(id);
+      else applyState.selectedDeletes.delete(id);
+    });
+  });
+  const all = $("apply-toggle-all-deletes");
+  if (all) {
+    all.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const checks = document.querySelectorAll('input[data-delete-id]');
+      const allOn = [...checks].every(c => c.checked);
+      checks.forEach(c => {
+        c.checked = !allOn;
+        const id = c.getAttribute("data-delete-id");
+        if (c.checked) applyState.selectedDeletes.add(id);
+        else applyState.selectedDeletes.delete(id);
+      });
+    });
+  }
+  const recompute = $("apply-recompute");
+  if (recompute) recompute.addEventListener("click", () => {
+    applyState.pending = "reading";
+    $("apply-content").innerHTML =
+      '<div class="apply-loading"><span class="spinner"></span> Re-reading Figma variables…</div>';
+    sendToPlugin({ type: "read-variables", purpose: "apply" });
+  });
 }
 
 /* ---------- Boot: ask plugin for saved config ---------- */
