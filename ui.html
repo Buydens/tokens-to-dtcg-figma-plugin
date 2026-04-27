@@ -171,6 +171,87 @@
   font-size: 11px;
 }
 
+/* Mapping panel (Stage 3) */
+.mapping-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+}
+.mapping-row:first-child { border-top: 0; }
+.mapping-source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+}
+.mapping-arrow { color: var(--text-tertiary); font-size: 12px; }
+.mapping-select {
+  width: 100%;
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+.mapping-new-name {
+  width: 100%;
+  margin-top: 4px;
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+.mapping-target-col { display: flex; flex-direction: column; gap: 0; }
+.mapping-collection-group {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+.mapping-collection-group:first-child { border-top: 0; }
+.mapping-collection-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.mapping-checkbox-row {
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11.5px;
+}
+.mapping-checkbox-row input[type="checkbox"] { margin-top: 2px; }
+.mapping-checkbox-row .desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.mapping-checkbox-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  padding: 0 3px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+}
+.mapping-empty {
+  padding: 14px 12px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
 /* ====================================================================
    Theme — adapts to Figma dark/light via CSS vars
    ==================================================================== */
@@ -2841,11 +2922,15 @@ function setFooterStatus(text, cssClass) {
    ============================================================ */
 
 const applyState = {
-  pending: null,           // null | "reading"
+  pending: null,           // null | "reading" | "applying"
   figmaSnapshot: null,     // last variables snapshot from code.js
   plan: null,              // { creates, updates, unchanged, skipped, willDelete }
   selectedDeletes: new Set(),
-  expanded: new Set(["create", "update", "skipped"]) // sections open by default
+  expanded: new Set(["create", "update", "skipped"]),
+  mappingExpanded: new Set(["collections", "modes", "types"]),
+  mapping: null,           // { collections: {src:tgt}, modes: {"src::mode":tgt}, treatNumberAsDimension: bool }
+  lastReport: null,
+  pendingPlan: null
 };
 
 const COMPOSITE_TYPES = new Set(["typography", "shadow", "border", "gradient", "transition"]);
@@ -2862,6 +2947,10 @@ function refreshApplyTabVisibility() {
 
 function startApplyDiff() {
   applyState.pending = "reading";
+  applyState.mapping = null;     // fresh import → fresh mapping
+  applyState.lastReport = null;
+  applyState.plan = null;
+  applyState.selectedDeletes = new Set();
   refreshApplyTabVisibility();
   switchTab("apply");
   $("apply-content").innerHTML =
@@ -2984,9 +3073,13 @@ function flattenFigma(snapshot) {
 
 /* ---------- inference (DTCG token → intended Figma var shape) ---------- */
 
-function inferImport(d) {
+function inferImport(d, mapping) {
   const token = d.token;
-  const $type = token.$type || guessDtcgType(token.$value);
+  let $type = token.$type || guessDtcgType(token.$value);
+  // Per-mapping override: globally treat `number` as `dimension` (sets dimension scopes).
+  if (mapping && mapping.treatNumberAsDimension && $type === "number") {
+    $type = "dimension";
+  }
   const figmaType = mapToFigmaType($type);
   return {
     $type,
@@ -2995,6 +3088,54 @@ function inferImport(d) {
     scopes: defaultScopesFor($type, d.path),
     description: token.$description || ""
   };
+}
+
+/* ---------- mapping ---------- */
+
+// Build a default mapping from the loaded DTCG + the Figma snapshot.
+// - Collections: same-name match if it exists, otherwise propose the same name to be created.
+// - Modes: same-name match within the (proposed) target collection, fallback to source name.
+// - treatNumberAsDimension: off by default.
+function getInitialMapping(dtcg, snapshot) {
+  const mapping = { collections: {}, modes: {}, treatNumberAsDimension: false };
+  if (!isPlainObject(dtcg)) return mapping;
+  const figByName = new Map();
+  if (snapshot && snapshot.variableCollections) {
+    for (const c of Object.values(snapshot.variableCollections)) figByName.set(c.name, c);
+  }
+  for (const [colName, colNode] of Object.entries(dtcg)) {
+    if (!isPlainObject(colNode) || colName.startsWith("$")) continue;
+    mapping.collections[colName] = colName; // default: same name
+    const targetCol = figByName.get(colName);
+    const targetModeNames = targetCol ? Object.values(targetCol.modes || {}) : [];
+    const buckets = detectModeBuckets(colNode);
+    if (buckets) {
+      for (const m of Object.keys(buckets)) {
+        mapping.modes[colName + "::" + m] = m;
+      }
+    } else {
+      // Single-mode source → first mode of the target collection (or "Default" for a new one)
+      mapping.modes[colName + "::Default"] = targetModeNames[0] || "Default";
+    }
+  }
+  return mapping;
+}
+
+// Apply a mapping to a flat list of desired entries from flattenDtcg.
+// Returns a new list where each entry has `collection` / `mode` rewritten to the mapped names,
+// and the original names preserved as `sourceCollection` / `sourceMode`.
+function applyMappingToDesired(desired, mapping) {
+  return desired.map(e => {
+    const targetCol = (mapping && mapping.collections && mapping.collections[e.collection]) || e.collection;
+    const modeKey = e.collection + "::" + e.mode;
+    const targetMode = (mapping && mapping.modes && mapping.modes[modeKey]) || e.mode;
+    return Object.assign({}, e, {
+      sourceCollection: e.collection,
+      sourceMode: e.mode,
+      collection: targetCol,
+      mode: targetMode
+    });
+  });
 }
 
 function guessDtcgType(v) {
@@ -3141,8 +3282,9 @@ function isSkippedToken(token) {
   return null;
 }
 
-function computePlan(dtcg, snapshot) {
-  const desired = flattenDtcg(dtcg);
+function computePlan(dtcg, snapshot, mapping) {
+  const desiredRaw = flattenDtcg(dtcg);
+  const desired = applyMappingToDesired(desiredRaw, mapping);
   const current = flattenFigma(snapshot);
   const keyOf = e => e.collection + "::" + e.mode + "::" + e.path;
   const currentMap = new Map();
@@ -3155,7 +3297,7 @@ function computePlan(dtcg, snapshot) {
   const seen = new Set();
 
   // Build alias-resolution context once per plan computation
-  const ctx = { snapshot, resolveAlias: buildAliasResolverFor(dtcg, snapshot) };
+  const ctx = { snapshot, resolveAlias: buildAliasResolverFor(dtcg, snapshot, mapping) };
 
   for (const d of desired) {
     const skip = isSkippedToken(d.token);
@@ -3163,7 +3305,7 @@ function computePlan(dtcg, snapshot) {
       skipped.push({ ...d, reason: skip });
       continue;
     }
-    const inferred = inferImport(d);
+    const inferred = inferImport(d, mapping);
     const desiredFigma = normalizeForFigma(inferred);
     if (desiredFigma && desiredFigma.skip) {
       skipped.push({ ...d, reason: desiredFigma.skip });
@@ -3194,9 +3336,172 @@ function computePlan(dtcg, snapshot) {
 }
 
 function computeAndRenderPlan() {
-  applyState.plan = computePlan(state.conversion.data, applyState.figmaSnapshot);
+  if (!applyState.mapping) {
+    applyState.mapping = getInitialMapping(state.conversion.data, applyState.figmaSnapshot);
+  }
+  applyState.plan = computePlan(state.conversion.data, applyState.figmaSnapshot, applyState.mapping);
   applyState.selectedDeletes = new Set();
   renderPlan();
+}
+
+// Re-run plan computation without re-fetching from Figma (used when mapping changes).
+function recomputeWithCurrentMapping() {
+  if (!state.conversion || !applyState.figmaSnapshot || !applyState.mapping) return;
+  applyState.plan = computePlan(state.conversion.data, applyState.figmaSnapshot, applyState.mapping);
+  applyState.selectedDeletes = new Set();
+  renderPlan();
+}
+
+/* ---------- mapping rendering ---------- */
+
+function dtcgSourceCollections() {
+  const out = [];
+  const dtcg = state.conversion && state.conversion.data;
+  if (!isPlainObject(dtcg)) return out;
+  for (const [colName, colNode] of Object.entries(dtcg)) {
+    if (!isPlainObject(colNode) || colName.startsWith("$")) continue;
+    const buckets = detectModeBuckets(colNode);
+    out.push({ name: colName, modes: buckets ? Object.keys(buckets) : ["Default"] });
+  }
+  return out;
+}
+
+function figmaCollectionList() {
+  const out = [];
+  const snap = applyState.figmaSnapshot;
+  if (snap && snap.variableCollections) {
+    for (const c of Object.values(snap.variableCollections)) {
+      out.push({ name: c.name, modes: Object.values(c.modes || {}) });
+    }
+  }
+  return out;
+}
+
+function dtcgHasNumberTokens() {
+  const dtcg = state.conversion && state.conversion.data;
+  if (!isPlainObject(dtcg)) return false;
+  let found = false;
+  function walk(node) {
+    if (found || !isPlainObject(node)) return;
+    if ("$value" in node) {
+      const guess = node.$type || guessDtcgType(node.$value);
+      if (guess === "number") found = true;
+      return;
+    }
+    for (const v of Object.values(node)) walk(v);
+  }
+  walk(dtcg);
+  return found;
+}
+
+function renderMappingPanel() {
+  const mapping = applyState.mapping;
+  if (!mapping) return "";
+  const sources = dtcgSourceCollections();
+  const figmaCols = figmaCollectionList();
+
+  // ----- Collection mapping section -----
+  const colRows = sources.map(src => {
+    const current = mapping.collections[src.name] || src.name;
+    const isCreating = !figmaCols.some(fc => fc.name === current);
+    let options = figmaCols.map(fc =>
+      `<option value="${escapeAttr(fc.name)}"${fc.name === current ? " selected" : ""}>${escapeHtml(fc.name)}</option>`
+    ).join("");
+    options += `<option value="__new__"${isCreating ? " selected" : ""}>+ Create new…</option>`;
+    return `
+      <div class="mapping-row">
+        <div class="mapping-source">${escapeHtml(src.name)}</div>
+        <div class="mapping-arrow">→</div>
+        <div class="mapping-target-col">
+          <select class="mapping-select" data-map-collection="${escapeAttr(src.name)}">${options}</select>
+          <input type="text" class="mapping-new-name"
+            data-map-collection-name="${escapeAttr(src.name)}"
+            value="${escapeAttr(current)}"
+            placeholder="New collection name"
+            ${isCreating ? "" : "style=\"display:none;\""} />
+        </div>
+      </div>`;
+  }).join("");
+
+  // ----- Mode mapping section: only collections with multi-mode source -----
+  const multiModeSources = sources.filter(s => s.modes.length > 1);
+  let modeBody;
+  if (multiModeSources.length === 0) {
+    modeBody = '<div class="mapping-empty">No multi-mode collections in the source file.</div>';
+  } else {
+    modeBody = multiModeSources.map(src => {
+      const targetColName = mapping.collections[src.name] || src.name;
+      const targetCol = figmaCols.find(fc => fc.name === targetColName);
+      const targetModes = targetCol ? targetCol.modes : [];
+      const rows = src.modes.map(m => {
+        const key = src.name + "::" + m;
+        const current = mapping.modes[key] || m;
+        const isCreating = !targetModes.includes(current);
+        let opts = targetModes.map(tm =>
+          `<option value="${escapeAttr(tm)}"${tm === current ? " selected" : ""}>${escapeHtml(tm)}</option>`
+        ).join("");
+        opts += `<option value="__new__"${isCreating ? " selected" : ""}>+ Create new…</option>`;
+        return `
+          <div class="mapping-row">
+            <div class="mapping-source">${escapeHtml(m)}</div>
+            <div class="mapping-arrow">→</div>
+            <div class="mapping-target-col">
+              <select class="mapping-select" data-map-mode="${escapeAttr(key)}">${opts}</select>
+              <input type="text" class="mapping-new-name"
+                data-map-mode-name="${escapeAttr(key)}"
+                value="${escapeAttr(current)}"
+                placeholder="New mode name"
+                ${isCreating ? "" : "style=\"display:none;\""} />
+            </div>
+          </div>`;
+      }).join("");
+      return `
+        <div class="mapping-collection-group">
+          <div class="mapping-collection-name">${escapeHtml(src.name)} → ${escapeHtml(targetColName)}</div>
+          ${rows}
+        </div>`;
+    }).join("");
+  }
+
+  // ----- Type overrides section -----
+  const showTypes = dtcgHasNumberTokens();
+  const typeBody = showTypes ? `
+    <div class="mapping-checkbox-row">
+      <input type="checkbox" id="map-num-as-dim"${mapping.treatNumberAsDimension ? " checked" : ""}/>
+      <div>
+        <div>Treat all <code>number</code> tokens as <code>dimension</code></div>
+        <div class="desc">Applies dimension-style default scopes (width, gap, radius). Useful when the source JSON loses unit info.</div>
+      </div>
+    </div>` : '<div class="mapping-empty">No <code>number</code>-typed tokens detected.</div>';
+
+  return `
+    <div class="apply-section ${applyState.mappingExpanded.has("collections") ? "expanded" : ""}" data-mapping="collections">
+      <div class="apply-section-header">
+        <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        <span>Collection mapping</span>
+        <span class="label-tag">${sources.length}</span>
+      </div>
+      <div class="apply-section-body">${colRows || '<div class="mapping-empty">No top-level groups detected.</div>'}</div>
+    </div>
+
+    <div class="apply-section ${applyState.mappingExpanded.has("modes") ? "expanded" : ""}" data-mapping="modes">
+      <div class="apply-section-header">
+        <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        <span>Mode mapping</span>
+        <span class="label-tag">${multiModeSources.length}</span>
+      </div>
+      <div class="apply-section-body">${modeBody}</div>
+    </div>
+
+    <div class="apply-section ${applyState.mappingExpanded.has("types") ? "expanded" : ""}" data-mapping="types">
+      <div class="apply-section-header">
+        <svg class="caret" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        <span>Type overrides</span>
+        <span class="label-tag">${showTypes ? "1" : "0"}</span>
+      </div>
+      <div class="apply-section-body">${typeBody}</div>
+    </div>
+  `;
 }
 
 /* ---------- rendering ---------- */
@@ -3241,7 +3546,8 @@ function renderPlan() {
       <button class="btn primary" id="apply-go"${hasWork ? "" : " disabled"}>Apply…</button>
     </div>`;
 
-  $("apply-content").innerHTML = banner + summary + sections + actions;
+  const mappingPanel = renderMappingPanel();
+  $("apply-content").innerHTML = banner + mappingPanel + summary + sections + actions;
   attachPlanHandlers();
 
   // Show apply count badge on the tab
@@ -3371,15 +3677,86 @@ function attachPlanHandlers() {
   document.querySelectorAll(".apply-section").forEach(sec => {
     const head = sec.querySelector(".apply-section-header");
     head.addEventListener("click", () => {
-      const key = sec.dataset.section;
+      const diffKey = sec.dataset.section;     // create / update / etc.
+      const mapKey = sec.dataset.mapping;      // collections / modes / types
+      const key = diffKey || mapKey;
+      const target = diffKey ? applyState.expanded : applyState.mappingExpanded;
       if (sec.classList.contains("expanded")) {
         sec.classList.remove("expanded");
-        applyState.expanded.delete(key);
+        target.delete(key);
       } else {
         sec.classList.add("expanded");
-        applyState.expanded.add(key);
+        target.add(key);
       }
     });
+  });
+
+  // Mapping: collection select
+  document.querySelectorAll('select[data-map-collection]').forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const src = sel.dataset.mapCollection;
+      const v = sel.value;
+      const inputEl = document.querySelector('input[data-map-collection-name="' + CSS.escape(src) + '"]');
+      if (v === "__new__") {
+        if (inputEl) {
+          inputEl.style.display = "block";
+          inputEl.focus();
+          inputEl.select();
+        }
+        applyState.mapping.collections[src] = (inputEl && inputEl.value) || src;
+      } else {
+        if (inputEl) inputEl.style.display = "none";
+        applyState.mapping.collections[src] = v;
+      }
+      recomputeWithCurrentMapping();
+    });
+  });
+  document.querySelectorAll('input[data-map-collection-name]').forEach(inp => {
+    inp.addEventListener("input", (e) => {
+      e.stopPropagation();
+      const src = inp.dataset.mapCollectionName;
+      applyState.mapping.collections[src] = inp.value || src;
+    });
+    inp.addEventListener("blur", () => recomputeWithCurrentMapping());
+  });
+
+  // Mapping: mode select
+  document.querySelectorAll('select[data-map-mode]').forEach(sel => {
+    sel.addEventListener("change", (e) => {
+      e.stopPropagation();
+      const key = sel.dataset.mapMode;
+      const v = sel.value;
+      const inputEl = document.querySelector('input[data-map-mode-name="' + CSS.escape(key) + '"]');
+      if (v === "__new__") {
+        if (inputEl) {
+          inputEl.style.display = "block";
+          inputEl.focus();
+          inputEl.select();
+        }
+        applyState.mapping.modes[key] = (inputEl && inputEl.value) || key.split("::")[1];
+      } else {
+        if (inputEl) inputEl.style.display = "none";
+        applyState.mapping.modes[key] = v;
+      }
+      recomputeWithCurrentMapping();
+    });
+  });
+  document.querySelectorAll('input[data-map-mode-name]').forEach(inp => {
+    inp.addEventListener("input", (e) => {
+      e.stopPropagation();
+      const key = inp.dataset.mapModeName;
+      applyState.mapping.modes[key] = inp.value || key.split("::")[1];
+    });
+    inp.addEventListener("blur", () => recomputeWithCurrentMapping());
+  });
+
+  // Mapping: type override
+  const numAsDim = $("map-num-as-dim");
+  if (numAsDim) numAsDim.addEventListener("change", (e) => {
+    e.stopPropagation();
+    applyState.mapping.treatNumberAsDimension = e.target.checked;
+    recomputeWithCurrentMapping();
   });
   document.querySelectorAll('input[data-delete-id]').forEach(cb => {
     cb.addEventListener("change", (e) => {
@@ -3415,39 +3792,51 @@ function attachPlanHandlers() {
 
 /* ---------- plan builder (consolidate diff into per-variable upserts) ---------- */
 
-function buildAliasResolverFor(dtcg, snapshot) {
-  const cols = new Map(); // colName -> Set<modeName>
+function buildAliasResolverFor(dtcg, snapshot, mapping) {
+  // Two universes: source DTCG collections (what aliases reference by source name)
+  // and Figma snapshot collections (fallback for raw alias strings written against figma names).
+  const sourceCols = new Map(); // sourceColName -> Set<sourceModeName>
   if (isPlainObject(dtcg)) {
     for (const [colName, colNode] of Object.entries(dtcg)) {
       if (!isPlainObject(colNode) || colName.startsWith("$")) continue;
       const modes = detectModeBuckets(colNode);
-      if (modes) {
-        cols.set(colName, new Set(Object.keys(modes)));
-      } else {
-        cols.set(colName, new Set(["Default"]));
-      }
+      sourceCols.set(colName, new Set(modes ? Object.keys(modes) : ["Default"]));
     }
   }
+  const snapCols = new Map(); // figmaColName -> Set<figmaModeName>
   if (snapshot && snapshot.variableCollections) {
     for (const c of Object.values(snapshot.variableCollections)) {
-      if (!cols.has(c.name)) cols.set(c.name, new Set());
-      for (const modeName of Object.values(c.modes || {})) cols.get(c.name).add(modeName);
+      snapCols.set(c.name, new Set(Object.values(c.modes || {})));
     }
   }
   return function resolveAlias(aliasStr) {
     if (!aliasStr) return null;
     const segs = String(aliasStr).split(".");
     if (segs.length < 2) return null;
-    const colName = segs[0];
-    if (!cols.has(colName)) return null;
+    const first = segs[0];
     let rest = segs.slice(1);
-    if (rest.length > 1 && cols.get(colName).has(rest[0])) rest = rest.slice(1);
-    return { collection: colName, path: rest.join("/") };
+
+    if (sourceCols.has(first)) {
+      const modes = sourceCols.get(first);
+      if (rest.length > 1 && modes.has(rest[0])) rest = rest.slice(1);
+      const targetCol = (mapping && mapping.collections && mapping.collections[first]) || first;
+      return { collection: targetCol, path: rest.join("/") };
+    }
+    if (snapCols.has(first)) {
+      const modes = snapCols.get(first);
+      if (rest.length > 1 && modes.has(rest[0])) rest = rest.slice(1);
+      return { collection: first, path: rest.join("/") };
+    }
+    return null;
   };
 }
 
 function buildAliasResolver() {
-  return buildAliasResolverFor(state.conversion && state.conversion.data, applyState.figmaSnapshot);
+  return buildAliasResolverFor(
+    state.conversion && state.conversion.data,
+    applyState.figmaSnapshot,
+    applyState.mapping
+  );
 }
 
 function buildApplyPlan() {
